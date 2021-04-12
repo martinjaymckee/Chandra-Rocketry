@@ -8,6 +8,7 @@
 #include <circular_buffer.h>
 #include <gravity.h>
 #include <quantity.h>
+#include <quantity_utils.h>
 #include <units.h>
 
 namespace chandra
@@ -61,34 +62,51 @@ class LiftoffDetector
   public:
     using value_t = Value;
     using clock_t = TimestampClock;
+    using time_t = chandra::units::mks::Q_s<value_t>;
     using velocity_t = chandra::units::Quantity<value_t, VelocityUnits>;
     using buffer_t = chandra::FixedCircularBuffer<velocity_t, BufferSize>;
     using acceleration_t = chandra::units::Quantity<value_t, VelocityUnits>;
     using acceleration_filter_t = AccelerationFilter<acceleration_t>;
     using event_result_t = FlightEventResult<clock_t>;
 
-    // CONSTRUCTORS -- CONSTRUCTORS ALSO CALL THE FILTER CONSTRUCTOR
+    template<class... Args>
+    LiftoffDetector(const velocity_t& _v_thresh = velocity_t{15}, Args... args)
+      : a_filter_{args...}, v_thresh_{_v_thresh} {}
+
     bool reset() {
       detected_ = false;
       v_est_ = velocity_t{0};
       return true;
     }
 
-    event_result_t operator () (double _dt, acceleration_t _a) {
+    template<class ChronoTime>
+    event_result_t operator () (const ChronoTime& _dt, acceleration_t _a) {
       if(detected_) return {}; // If already detected, never return detection again
+
       const auto a_smooth = a_filter_(_a);
-      const auto dv = velicty_t{(_dt * _a).value()}; // TODO: THE TIME SHOULD NOT BE A SCALAR AND THIS IS NOT
-      // THERE SHOULD BE A CHANDRA::UNITS::SATURATENONNEGATIVE() FUNCTION...
-      if(dv_buffer_.full()) {
+      if(units::isNonnegative(a_smooth)){
+        if(dv_buffer_.full()) {
+            v_est_ -= dv_buffer_[0];
+        }
 
+        if(dv.value() < value_t{0}) {
+          dv_buffer_ << velocity_t{0};
+        } else {
+          const time_t dt = units::chronoToQuantity<time_t>(_dt);
+          const velocity_t dv{dt * _a};
+          dv_buffer_ << dv;
+          v_est_ += dv;
+        }
+
+        if(v_est_ > v_thresh_) {
+          detected_ = true;
+          // TODO: ESTIMATE LIFTOFF TIME
+          const auto t = clock_t::now();
+          return {true, t};
+        }
       }
 
-      if(dv.value() < value_t{0}) {
-        dv_buffer_ << velocity_t{0};
-      } else {
-        dv_buffer_ << dv;
-      }
-      return {};
+      return {false};
     }
 
   protected:
@@ -100,6 +118,7 @@ class LiftoffDetector
 
 template<
   class Value,
+  template<class> class DerivitiveEstimator = internal::DummyFilter,
   template<class> class JerkFilter = internal::DummyFilter,
   class TimestampClock = chandra::chrono::timestamp_clock,
   class TimeUnits = chandra::units::mks::s,
