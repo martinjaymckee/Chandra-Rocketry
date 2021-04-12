@@ -16,12 +16,15 @@ namespace chandra
 namespace rocketry
 {
 
+template<class T>
+struct TD;
+
 template<class TimestampClock>
 class FlightEventResult
 {
   public:
     using clock_t = TimestampClock;
-    using time_point_t = typename clock_t::time_point_t;
+    using time_point_t = typename clock_t::time_point;
 
     FlightEventResult(
       bool _detected,
@@ -65,7 +68,7 @@ class LiftoffDetector
     using time_t = chandra::units::mks::Q_s<value_t>;
     using velocity_t = chandra::units::Quantity<value_t, VelocityUnits>;
     using buffer_t = chandra::FixedCircularBuffer<velocity_t, BufferSize>;
-    using acceleration_t = chandra::units::Quantity<value_t, VelocityUnits>;
+    using acceleration_t = chandra::units::Quantity<value_t, AccelerationUnits>;
     using acceleration_filter_t = AccelerationFilter<acceleration_t>;
     using event_result_t = FlightEventResult<clock_t>;
 
@@ -85,6 +88,14 @@ class LiftoffDetector
 
       const auto a_smooth = a_filter_(_a);
       if(units::isNonnegative(a_smooth)){
+        const time_t dt = units::conversions::chronoToQuantity<time_t>(_dt);
+        const velocity_t dv{dt * _a};
+
+        using mult_units_t = typename decltype(dt * _a)::units_t;
+        using dim_t = typename mult_units_t::dimensions_t;
+        // TD<mult_units_t> a;
+        // TD<dim_t> b;
+
         if(dv_buffer_.full()) {
             v_est_ -= dv_buffer_[0];
         }
@@ -92,8 +103,6 @@ class LiftoffDetector
         if(dv.value() < value_t{0}) {
           dv_buffer_ << velocity_t{0};
         } else {
-          const time_t dt = units::chronoToQuantity<time_t>(_dt);
-          const velocity_t dv{dt * _a};
           dv_buffer_ << dv;
           v_est_ += dv;
         }
@@ -102,18 +111,19 @@ class LiftoffDetector
           detected_ = true;
           // TODO: ESTIMATE LIFTOFF TIME
           const auto t = clock_t::now();
-          return {true, t};
+          return event_result_t(true, t);
         }
       }
 
-      return {false};
+      return event_result_t(false);
     }
 
   protected:
     bool detected_ = false;
     acceleration_filter_t a_filter_;
     buffer_t dv_buffer_;
-    velocity_t v_est_;
+    velocity_t v_thresh_;
+    velocity_t v_est_{0};
 };
 
 template<
