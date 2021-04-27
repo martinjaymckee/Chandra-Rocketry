@@ -62,6 +62,16 @@ class LoopControl
     constexpr bool mode() const { return system_active_; }
 
     template<class Rep, class Period>
+    duration_t loop_time(const std::chrono::duration<Rep, Period>& _t) {
+      t_loop_ = _t;
+      return loop_time();
+    }
+
+    constexpr duration_t loop_time() const {
+      return t_loop_;
+    }
+
+    template<class Rep, class Period>
     bool hil_update(const std::chrono::duration<Rep, Period>& _dt) {
         if(!system_active_) {
           hil_trigger_ = true;
