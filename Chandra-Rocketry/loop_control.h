@@ -1,6 +1,9 @@
 #ifndef CHANDRA_ROCKETRY_LOOP_CONTROL_H
 #define CHANDRA_ROCKETRY_LOOP_CONTROL_H
 
+#include <chrono>
+using namespace std::literals::chrono_literals;
+
 //
 // Chandra-HAL Includes
 //
@@ -19,14 +22,17 @@ class LoopControl
 {
   public:
     using loop_clock_t = chandra::chrono::compound_clock<SystemClock, HILClock>;
+    using hil_clock_t = HILClock;
     using duration_t = typename loop_clock_t::duration;
     using timepoint_t = typename loop_clock_t::time_point;
 
     struct LoopTriggerEvent
     {
       LoopTriggerEvent() : trigger{0}, dt{0} {}
-      LoopTriggerEvent(const bool& _trigger, duration_t& _dt)
+      LoopTriggerEvent(const bool& _trigger, duration_t _dt)
         : trigger{_trigger}, dt{_dt} {}
+
+      constexpr operator bool () const { return trigger; }
 
       bool trigger = false;
       duration_t dt;
@@ -36,24 +42,44 @@ class LoopControl
       : t_last_{duration_t{0}}, t_loop_{_t_loop} {}
 
     bool init() {
-      return loop_clock_t::init();
+      loop_clock_t::init();
+      reset();
+      return true;
     }
 
-    bool mode(const bool& _sys) const {
+    bool reset() {
+      loop_clock_t::reset();
+      t_last_ = loop_clock_t::now();
+      return true;
+    }
+
+    bool mode(const bool& _sys) {
       system_active_ = _sys;
+      loop_clock_t::source(_sys);
       return mode();
     }
 
     constexpr bool mode() const { return system_active_; }
 
+    template<class Rep, class Period>
+    bool hil_update(const std::chrono::duration<Rep, Period>& _dt) {
+        if(!system_active_) {
+          hil_trigger_ = true;
+          loop_clock_t::advance(_dt);
+          return true;
+        }
+        return false;
+    }
+
     LoopTriggerEvent trigger() noexcept {
       const auto t = loop_clock_t::now();
-      const auto dt = t - t_last_;
+      duration_t dt = t_loop_;
 
       if(triggered_) sync();
 
       if(system_active_) {
-        if(chandra::chrono::after(t_loop_, t_last_, t)) {
+        // Advance to nearset timestep to avoid multiple loop triggers in rapid succession
+        while(chandra::chrono::after(t_loop_, t_last_, t)) {
           t_last_ += t_loop_;
           triggered_ = true;
         }
@@ -61,6 +87,7 @@ class LoopControl
         if(hil_trigger_) {
           hil_trigger_ = false;
           triggered_ = true;
+          dt = t - t_last_;
           t_last_ = t;
         }
       }
@@ -69,9 +96,9 @@ class LoopControl
     }
 
     template<class Func>
-    bool sync(Func& _func) {
+    bool sync(const Func& _func) {
       if(triggered_) {
-        _func(t_last_);
+        _func(!system_active_, t_last_);
         triggered_ = false;
         return true;
       }
@@ -79,7 +106,7 @@ class LoopControl
     }
 
     bool sync() noexcept {
-      return sync([](auto){});
+      return sync([](bool, auto){});
     }
 
   protected:
