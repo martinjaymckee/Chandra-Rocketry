@@ -99,6 +99,7 @@ class LoopControl
           triggered_ = true;
           dt = t - t_last_;
           t_last_ = t;
+          (void) t_last_;
         }
       }
 
