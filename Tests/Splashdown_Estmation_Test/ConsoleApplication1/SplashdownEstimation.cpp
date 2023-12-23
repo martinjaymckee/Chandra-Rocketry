@@ -799,9 +799,9 @@ int main()
 	gnss_status_t gnss_status;
 	chandra::aero::protocol::TrackerGNSSSample<value_t> gnss_sample;
 	tracker_estimator_t tracking_estimator(vehicle_id, tracker_id);
-	chandra::rocketry::LiftoffDetector<value_t, system_clock_t> liftoff_detector;
-	chandra::rocketry::BurnoutDetector<value_t, system_clock_t> burnout_detector;
 	const auto detector_smoothing_param = 0.2;
+	chandra::rocketry::LiftoffDetector<value_t, system_clock_t> liftoff_detector;
+	chandra::rocketry::BurnoutDetector<value_t, system_clock_t> burnout_detector(detector_smoothing_param);
 	chandra::rocketry::ApogeeDetector<value_t, system_clock_t> apogee_detector(detector_smoothing_param); // Note: By default the apogee and landing detectors use an exponential filter
 	chandra::rocketry::LandingDetector<value_t, system_clock_t> landing_detector(detector_smoothing_param);
 

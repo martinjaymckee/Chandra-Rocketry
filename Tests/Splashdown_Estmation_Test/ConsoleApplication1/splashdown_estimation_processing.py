@@ -211,6 +211,15 @@ def main():
         ts.append(t)
         ps.append( (x, y, z) )
         
+        
+    fig, axs = plt.subplots(2, sharex=True, constrained_layout=True)
+    fig.suptitle('Burnout Test State')
+    axs[0].set_title('Z-Acceleration')
+    axs[1].set_title('Z-Jerk')
+    axs[0].plot(df['t'], df['meas_accel_z_enu'])
+    axs[1].plot(df['t'], df['meas_accel_z_enu'].diff()/0.1)
+    plot_events_on_timeseries(df, axs)     
+    
     print(df['flight_event'].unique())
     plt.show()
     return
